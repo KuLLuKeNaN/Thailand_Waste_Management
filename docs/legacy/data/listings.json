@@ -1,0 +1,32 @@
+[
+  {
+    "id": "e206ef2e-e970-4f87-8dd6-001ad00be6f1",
+    "org_name": "Central Hotel",
+    "waste_type": "Banana peels",
+    "quantity": 1,
+    "available_date": "2026-02-04",
+    "location": "Main street",
+    "status": "claimed",
+    "claimed_by": "Main Center"
+  },
+  {
+    "id": "36d3a44c-3afa-4aac-959b-f6d2bfe49bc2",
+    "org_name": "Main Hotel",
+    "waste_type": "Used cooking oil",
+    "quantity": 10,
+    "available_date": "2026-02-05",
+    "location": "Main Street",
+    "status": "claimed",
+    "claimed_by": "Community Center 1"
+  },
+  {
+    "id": "c9cba0a0-73b5-414c-8e3b-b835fe3fb01d",
+    "org_name": "Main Restaurant",
+    "waste_type": "Coffee grounds",
+    "quantity": 8,
+    "available_date": "2026-02-05",
+    "location": "Main Road",
+    "status": "available",
+    "claimed_by": null
+  }
+]
