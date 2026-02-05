@@ -154,11 +154,28 @@ inp = DemandInputs(
 
 out = estimate_portions(inp)
 
+# --- DEMO ML LAYER ---
+from logic.demo_ml import train_and_predict_demo_ml
+
+demo_ml = train_and_predict_demo_ml(
+    expected_guests=int(expected_guests),
+    occupancy_rate=float(occupancy_rate),
+    weather=weather,
+    day_type=day_type,
+    event_level=event_level,
+    baseline_portions=int(out.baseline_portions),
+)
+
+out.recommended_portions = demo_ml.predicted_portions
+st.caption(demo_ml.note)
+# --- END DEMO ML ---
+
 savings = estimate_savings(
     recommended_portions=out.recommended_portions,
     baseline_portions=out.baseline_portions,
     cost_thb_per_portion=cost_thb_per_portion,
 )
+
 
 streak_days = int(st.session_state.green_star_streak)
 demo_days = int(days_used) if (jury_mode and days_used is not None) else streak_days
