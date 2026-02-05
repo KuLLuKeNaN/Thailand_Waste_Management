@@ -6,6 +6,7 @@ from logic.demand_engine import DemandInputs, estimate_portions
 from logic.savings import estimate_savings
 from logic.green_star import evaluate_green_star
 from logic.history import generate_fake_history
+from logic.demo_ml import train_and_predict_demo_ml
 
 st.set_page_config(
     page_title="FoodSave.AI — Hotel Edition",
@@ -88,7 +89,7 @@ st.write("")
 with st.sidebar:
     st.markdown("### Inputs")
     jury_mode = st.toggle("Jury Mode (show explanations)", value=False)
-
+    use_demo_ml = st.toggle("Use Demo ML", value=True)
     target_meal = st.selectbox("Meal / Buffet Service", menu_items, index=0)
 
     expected_guests = st.number_input(
@@ -152,10 +153,7 @@ inp = DemandInputs(
     event_level=event_level,
 )
 
-out = estimate_portions(inp)
-
-# --- DEMO ML LAYER ---
-from logic.demo_ml import train_and_predict_demo_ml
+baseline_out = estimate_portions(inp)
 
 demo_ml = train_and_predict_demo_ml(
     expected_guests=int(expected_guests),
@@ -163,18 +161,22 @@ demo_ml = train_and_predict_demo_ml(
     weather=weather,
     day_type=day_type,
     event_level=event_level,
-    baseline_portions=int(out.baseline_portions),
+    baseline_portions=int(baseline_out.baseline_portions),
 )
 
-out.recommended_portions = demo_ml.predicted_portions
-st.caption(demo_ml.note)
-# --- END DEMO ML ---
+ml_out = estimate_portions(inp)
+ml_out.recommended_portions = demo_ml.predicted_portions
+
+out = ml_out if use_demo_ml else baseline_out
+
+st.caption(demo_ml.note if use_demo_ml else "ML OFF — using baseline engine (rules).")
 
 savings = estimate_savings(
     recommended_portions=out.recommended_portions,
     baseline_portions=out.baseline_portions,
     cost_thb_per_portion=cost_thb_per_portion,
 )
+
 
 
 streak_days = int(st.session_state.green_star_streak)
@@ -191,6 +193,17 @@ star = evaluate_green_star(
 
 delta_portions = out.recommended_portions - out.baseline_portions
 delta_pct = (delta_portions / max(1, out.baseline_portions)) * 100.0
+st.write("")
+a, b = st.columns(2, gap="large")
+
+with a:
+    st.markdown("### Baseline (No ML)")
+    st.metric("Recommended Portions", f"{baseline_out.recommended_portions}", delta=f"{baseline_out.recommended_portions - baseline_out.baseline_portions:+d} vs baseline")
+
+with b:
+    st.markdown("### Demo ML")
+    st.metric("Recommended Portions", f"{ml_out.recommended_portions}", delta=f"{ml_out.recommended_portions - baseline_out.baseline_portions:+d} vs baseline")
+    st.caption(f"Demo score (synthetic): R²={demo_ml.demo_r2:.2f} • MAE={demo_ml.demo_mae:.1f} portions")
 
 top = st.columns([1, 1, 1], gap="large")
 with top[0]:
