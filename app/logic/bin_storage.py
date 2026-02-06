@@ -23,3 +23,8 @@ def append_event(path: str, event: Dict[str, Any]) -> None:
 
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+def save_events(path: str, events) -> None:
+    _ensure_file(path)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(events, f, indent=2)

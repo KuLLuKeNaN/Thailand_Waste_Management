@@ -10,6 +10,9 @@ from logic.demo_ml import train_and_predict_demo_ml
 from logic.bin_storage import append_event, load_events, now_iso
 from logic.smart_bin import ITEM_TO_BIN, BINS, classify_demo, evaluate_bin
 from logic.recycler import get_demo_partners, choose_partner
+from datetime import date, timedelta
+from datetime import datetime
+from logic.bin_storage import append_event, load_events, save_events, now_iso
 
 st.set_page_config(
     page_title="FoodSave.AI — Hotel Edition",
@@ -19,6 +22,8 @@ st.set_page_config(
 )
 if "green_star_streak" not in st.session_state:
     st.session_state.green_star_streak = 0
+if "active_day" not in st.session_state:
+    st.session_state.active_day = date.today().isoformat()
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(BASE_DIR, "data", "sample_menu_costs.csv")
@@ -95,6 +100,11 @@ with st.sidebar:
     st.markdown("### Inputs")
     jury_mode = st.toggle("Jury Mode (show explanations)", value=False)
     use_demo_ml = st.toggle("Use Demo ML", value=True)
+    active_day_input = st.date_input("Active day (demo)",value=date.fromisoformat(st.session_state.active_day),)
+    st.session_state.active_day = active_day_input.isoformat()
+    st.caption(f"Active day used for proof + Smart Bin totals: {st.session_state.active_day}")
+ 
+    
     target_meal = st.selectbox("Meal / Buffet Service", menu_items, index=0)
 
     expected_guests = st.number_input(
@@ -182,15 +192,15 @@ savings = estimate_savings(
     cost_thb_per_portion=cost_thb_per_portion,
 )
 # --- Proof data from Smart Bin (measured) ---
-from datetime import date
+# --- Proof data from Smart Bin (measured) — FILTERED BY ACTIVE DAY ---
+active_day = st.session_state.active_day
 
-today = date.today().isoformat()
 
 bin_events_all = load_events(BIN_EVENTS_PATH)
 
 today_events = [
     e for e in bin_events_all
-    if e.get("timestamp", "").startswith(today)
+    if e.get("timestamp", "").startswith(active_day)
 ]
 
 if len(today_events) > 0:
@@ -201,8 +211,11 @@ else:
     measured_waste_kg = 0.0
     wrong_bin_kg = 0.0
 
-# Demo threshold (daily)
+
+# Demo threshold (tune if needed)
 proof_threshold_kg = max(2.0, 0.015 * float(out.recommended_portions))
+
+
 
 streak_days = int(st.session_state.green_star_streak)
 demo_days = int(days_used) if (jury_mode and days_used is not None) else streak_days
@@ -328,7 +341,12 @@ with cB:
                 st.write("- " + n)
 st.divider()
 st.markdown("## Smart Bin (Demo) — Camera + Scale Logging")
-
+if st.button("🗑️ Clear Smart Bin Logs (Active Day)", use_container_width=True):
+    active_day = st.session_state.active_day
+    all_events = load_events(BIN_EVENTS_PATH)
+    kept = [e for e in all_events if not e.get("timestamp", "").startswith(active_day)]
+    save_events(BIN_EVENTS_PATH, kept)
+    st.rerun()
 left, right = st.columns([1.05, 0.95], gap="large")
 
 with left:
@@ -347,8 +365,9 @@ with left:
         st.error(rule.message)
 
     if st.button("Save Smart Bin Event", use_container_width=True):
+        demo_ts = f"{st.session_state.active_day}T{datetime.now().strftime('%H:%M:%S')}"
         append_event(BIN_EVENTS_PATH, {
-            "timestamp": now_iso(),
+            "timestamp": demo_ts,
             "item": pred_item,
             "confidence": conf,
             "weight_kg": float(weight_kg),
@@ -357,6 +376,7 @@ with left:
             "is_correct_bin": rule.is_correct_bin,
         })
         st.rerun()
+
 
 with right:
     st.markdown("### Today’s waste breakdown (demo log)")
@@ -386,7 +406,14 @@ partner_labels = [f"{p.name}  • accepts: {', '.join(p.accepts)}  • ETA: {p.e
 left, right = st.columns([1.05, 0.95], gap="large")
 
 with left:
+    if st.button("🗑️ Clear Pickup Requests (Active Day)", use_container_width=True):
+        active_day = st.session_state.active_day
+        all_reqs = load_events(RECYCLER_REQ_PATH)
+        kept = [r for r in all_reqs if not r.get("timestamp", "").startswith(active_day)]
+        save_events(RECYCLER_REQ_PATH, kept)
+        st.rerun()
     st.markdown("### Create a pickup request")
+    
 
     # Pull totals from Smart Bin logs
     bin_events = load_events(BIN_EVENTS_PATH)
@@ -424,6 +451,7 @@ with left:
         pickup_note = st.text_input("Pickup note (optional)", value="Hotel back entrance • call kitchen manager")
 
         if st.button("Send Pickup Request", type="primary", use_container_width=True):
+            demo_ts = f"{st.session_state.active_day}T{datetime.now().strftime('%H:%M:%S')}"
             chosen = partners[partner_idx]
             append_event(RECYCLER_REQ_PATH, {
                 "timestamp": now_iso(),
@@ -500,7 +528,10 @@ if st.button("Submit End-of-Day Result", use_container_width=True):
         st.session_state.green_star_streak = st.session_state.green_star_streak
     else:
         st.session_state.green_star_streak = 0
+
+    st.session_state.active_day = (date.fromisoformat(st.session_state.active_day) + timedelta(days=1)).isoformat()
     st.rerun()
+
 
 if day_status == "COUNTED":
     st.success("Counted: recommendation followed and baseline reduced.")
