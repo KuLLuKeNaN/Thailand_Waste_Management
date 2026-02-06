@@ -7,6 +7,9 @@ from logic.savings import estimate_savings
 from logic.green_star import evaluate_green_star
 from logic.history import generate_fake_history
 from logic.demo_ml import train_and_predict_demo_ml
+from logic.bin_storage import append_event, load_events, now_iso
+from logic.smart_bin import ITEM_TO_BIN, BINS, classify_demo, evaluate_bin
+from logic.recycler import get_demo_partners, choose_partner
 
 st.set_page_config(
     page_title="FoodSave.AI — Hotel Edition",
@@ -19,6 +22,8 @@ if "green_star_streak" not in st.session_state:
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(BASE_DIR, "data", "sample_menu_costs.csv")
+BIN_EVENTS_PATH = os.path.join(BASE_DIR, "data", "bin_events.json")
+RECYCLER_REQ_PATH = os.path.join(BASE_DIR, "data", "recycler_requests.json")
 
 
 def load_menu_costs(path: str) -> pd.DataFrame:
@@ -176,8 +181,28 @@ savings = estimate_savings(
     baseline_portions=out.baseline_portions,
     cost_thb_per_portion=cost_thb_per_portion,
 )
+# --- Proof data from Smart Bin (measured) ---
+from datetime import date
 
+today = date.today().isoformat()
 
+bin_events_all = load_events(BIN_EVENTS_PATH)
+
+today_events = [
+    e for e in bin_events_all
+    if e.get("timestamp", "").startswith(today)
+]
+
+if len(today_events) > 0:
+    bin_df = pd.DataFrame(today_events)
+    measured_waste_kg = float(bin_df["weight_kg"].sum())
+    wrong_bin_kg = float(bin_df.loc[bin_df["is_correct_bin"] == False, "weight_kg"].sum())
+else:
+    measured_waste_kg = 0.0
+    wrong_bin_kg = 0.0
+
+# Demo threshold (daily)
+proof_threshold_kg = max(2.0, 0.015 * float(out.recommended_portions))
 
 streak_days = int(st.session_state.green_star_streak)
 demo_days = int(days_used) if (jury_mode and days_used is not None) else streak_days
@@ -301,6 +326,129 @@ with cB:
         with st.expander("Savings assumptions details"):
             for n in savings.notes:
                 st.write("- " + n)
+st.divider()
+st.markdown("## Smart Bin (Demo) — Camera + Scale Logging")
+
+left, right = st.columns([1.05, 0.95], gap="large")
+
+with left:
+    st.markdown("### Log a disposal event (demo)")
+    selected_item = st.selectbox("What was thrown away?", list(ITEM_TO_BIN.keys()), index=0)
+    chosen_bin = st.selectbox("Which bin is being used?", BINS, index=0)
+    weight_kg = st.number_input("Measured weight (kg)", min_value=0.0, max_value=50.0, value=0.25, step=0.05)
+
+    pred_item, conf = classify_demo(selected_item)
+    rule = evaluate_bin(pred_item, chosen_bin)
+
+    st.write(f"**Camera detected:** {pred_item} (confidence: {conf:.2f})")
+    if rule.is_correct_bin:
+        st.success(rule.message)
+    else:
+        st.error(rule.message)
+
+    if st.button("Save Smart Bin Event", use_container_width=True):
+        append_event(BIN_EVENTS_PATH, {
+            "timestamp": now_iso(),
+            "item": pred_item,
+            "confidence": conf,
+            "weight_kg": float(weight_kg),
+            "bin_used": chosen_bin,
+            "recommended_bin": ITEM_TO_BIN.get(pred_item, "Landfill"),
+            "is_correct_bin": rule.is_correct_bin,
+        })
+        st.rerun()
+
+with right:
+    st.markdown("### Today’s waste breakdown (demo log)")
+    events = load_events(BIN_EVENTS_PATH)
+    if len(events) == 0:
+        st.info("No Smart Bin events yet. Add one on the left.")
+    else:
+        df = pd.DataFrame(events)
+        st.dataframe(df.tail(10), use_container_width=True)
+
+        total = df["weight_kg"].sum()
+        wrong = df.loc[df["is_correct_bin"] == False, "weight_kg"].sum()
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Total measured waste", f"{total:.2f} kg")
+        with c2:
+            st.metric("Wrong-bin waste", f"{wrong:.2f} kg")
+
+        by_item = df.groupby("item")["weight_kg"].sum().sort_values(ascending=False)
+        st.bar_chart(by_item)
+st.markdown("## Recycler Redirect (Demo)")
+
+partners = get_demo_partners()
+partner_labels = [f"{p.name}  • accepts: {', '.join(p.accepts)}  • ETA: {p.eta_window}" for p in partners]
+
+left, right = st.columns([1.05, 0.95], gap="large")
+
+with left:
+    st.markdown("### Create a pickup request")
+
+    # Pull totals from Smart Bin logs
+    bin_events = load_events(BIN_EVENTS_PATH)
+    if len(bin_events) == 0:
+        st.info("No Smart Bin events yet. Add Smart Bin events first to generate a redirect request.")
+    else:
+        dfb = pd.DataFrame(bin_events)
+
+        total_waste = float(dfb["weight_kg"].sum())
+        wrong_bin = float(dfb.loc[dfb["is_correct_bin"] == False, "weight_kg"].sum())
+
+        st.metric("Total measured waste (from Smart Bin)", f"{total_waste:.2f} kg")
+        st.metric("Wrong-bin waste", f"{wrong_bin:.2f} kg")
+
+        waste_stream = st.selectbox("Waste stream to redirect", ["Compost", "Biogas", "Recycle"], index=0)
+
+        auto_partner = choose_partner(waste_stream)
+        default_index = [p.id for p in partners].index(auto_partner.id)
+
+        partner_idx = st.selectbox(
+            "Recycler partner",
+            list(range(len(partners))),
+            index=default_index,
+            format_func=lambda i: partner_labels[i],
+        )
+
+        pickup_kg = st.number_input(
+            "Estimated pickup weight (kg)",
+            min_value=0.0,
+            max_value=200.0,
+            value=min(25.0, total_waste),
+            step=0.5,
+        )
+
+        pickup_note = st.text_input("Pickup note (optional)", value="Hotel back entrance • call kitchen manager")
+
+        if st.button("Send Pickup Request", type="primary", use_container_width=True):
+            chosen = partners[partner_idx]
+            append_event(RECYCLER_REQ_PATH, {
+                "timestamp": now_iso(),
+                "waste_stream": waste_stream,
+                "estimated_kg": float(pickup_kg),
+                "partner_id": chosen.id,
+                "partner_name": chosen.name,
+                "eta_window": chosen.eta_window,
+                "note": pickup_note,
+                "status": "REQUESTED",
+            })
+            st.success(f"✅ Request sent to **{chosen.name}** (ETA {chosen.eta_window}) for **{pickup_kg:.2f} kg**.")
+            st.rerun()
+
+with right:
+    st.markdown("### Pickup request log")
+
+    reqs = load_events(RECYCLER_REQ_PATH)
+    if len(reqs) == 0:
+        st.info("No pickup requests yet.")
+    else:
+        dfr = pd.DataFrame(reqs)
+        st.dataframe(dfr.tail(10), use_container_width=True)
+
+        st.caption("Demo: requests are stored locally. In production, this would go to a backend + partner API/WhatsApp.")
 
 st.divider()
 st.markdown("## End of Day — What actually happened?")
@@ -321,19 +469,29 @@ followed = actual_cooked <= recommended
 delta_actual_vs_baseline = actual_cooked - baseline
 delta_actual_pct = (delta_actual_vs_baseline / max(1, baseline)) * 100.0
 
-if actual_cooked < baseline:
-    outcome = "Waste reduction achieved"
-elif actual_cooked == baseline:
-    outcome = "Neutral outcome"
-else:
-    outcome = "Overproduction risk"
+# --- Proof checks ---
+proof_ok = (measured_waste_kg <= proof_threshold_kg)
+wrong_bin_ok = (wrong_bin_kg <= max(0.5, 0.20 * measured_waste_kg))
 
-if followed and actual_cooked < baseline:
+if followed and actual_cooked < baseline and proof_ok and wrong_bin_ok:
     day_status = "COUNTED"
-elif followed and recommended >= baseline:
+elif followed and (recommended >= baseline) and proof_ok:
     day_status = "NEUTRAL"
 else:
     day_status = "RESET"
+st.markdown("### Proof Data (Smart Bin)")
+p1, p2, p3 = st.columns(3)
+with p1:
+    st.metric("Measured waste today", f"{measured_waste_kg:.2f} kg")
+with p2:
+    st.metric("Wrong-bin waste", f"{wrong_bin_kg:.2f} kg")
+with p3:
+    st.metric("Proof threshold", f"{proof_threshold_kg:.2f} kg")
+
+if proof_ok and wrong_bin_ok:
+    st.success("✅ Proof check passed (measured waste within expected range).")
+else:
+    st.warning("⚠ Proof check failed (waste too high or too many wrong-bin events).")
 
 if st.button("Submit End-of-Day Result", use_container_width=True):
     if day_status == "COUNTED":

@@ -1,0 +1,38 @@
+[
+  {
+    "timestamp": "2026-02-06T14:05:54",
+    "item": "Rice",
+    "confidence": 0.78,
+    "weight_kg": 0.4,
+    "bin_used": "Compost",
+    "recommended_bin": "Compost",
+    "is_correct_bin": true
+  },
+  {
+    "timestamp": "2026-02-06T14:18:51",
+    "item": "Onion",
+    "confidence": 0.82,
+    "weight_kg": 20.0,
+    "bin_used": "Compost",
+    "recommended_bin": "Compost",
+    "is_correct_bin": true
+  },
+  {
+    "timestamp": "2026-02-06T14:22:31",
+    "item": "Fish",
+    "confidence": 0.95,
+    "weight_kg": 0.25,
+    "bin_used": "Biogas",
+    "recommended_bin": "Biogas",
+    "is_correct_bin": true
+  },
+  {
+    "timestamp": "2026-02-06T14:24:28",
+    "item": "Onion",
+    "confidence": 0.82,
+    "weight_kg": 0.25,
+    "bin_used": "Compost",
+    "recommended_bin": "Compost",
+    "is_correct_bin": true
+  }
+]

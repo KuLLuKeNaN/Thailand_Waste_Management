@@ -1,0 +1,22 @@
+[
+  {
+    "timestamp": "2026-02-06T14:10:42",
+    "waste_stream": "Compost",
+    "estimated_kg": 0.4,
+    "partner_id": "R1",
+    "partner_name": "Bangkok Compost Co-op",
+    "eta_window": "18:00\u201320:00",
+    "note": "Hotel back entrance \u2022 call kitchen manager",
+    "status": "REQUESTED"
+  },
+  {
+    "timestamp": "2026-02-06T14:22:15",
+    "waste_stream": "Compost",
+    "estimated_kg": 20.4,
+    "partner_id": "R1",
+    "partner_name": "Bangkok Compost Co-op",
+    "eta_window": "18:00\u201320:00",
+    "note": "Hotel back entrance \u2022 call kitchen manager",
+    "status": "REQUESTED"
+  }
+]
