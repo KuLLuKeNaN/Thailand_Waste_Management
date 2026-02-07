@@ -20,6 +20,33 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.markdown("""
+<style>
+/* Hide/neutralize Streamlit header */
+header {
+    visibility: hidden !important;
+    height: 0 !important;
+}
+
+/* Remove extra top space that Streamlit may add */
+div[data-testid="stAppViewContainer"] > .main {
+    padding-top: 0 !important;
+}
+
+/* Main container spacing */
+.block-container {
+    padding-top: 4rem !important;
+}
+
+/* Title spacing fix */
+h1, h2, h3 {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 if "green_star_streak" not in st.session_state:
     st.session_state.green_star_streak = 0
 if "active_day" not in st.session_state:
